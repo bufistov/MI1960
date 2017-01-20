@@ -7,6 +7,10 @@ import argparse
 import os.path
 import sys
 
+from keystoneauth1 import identity
+from keystoneauth1 import session
+from neutronclient.v2_0 import client
+
 logging.basicConfig()
 
 neutron_zkpath = '/midonet/v1/neutron'
@@ -39,26 +43,24 @@ def parse_args():
     debug(args)
     return args
 
-def find_garbage(zk, backup, remove_garbage):
+def find_garbage(zk, neutron, backup, remove_garbage):
 
     count = 0
 
     referenced_sgr_ids = dict()
 
-    debug('Finding garbage(1/2): looking for security groups ...')
+    debug('Finding garbage(1/2): looking for security groups rules in Neutron...')
 
-    sg_list = zk.get_children(sg_container_path)
-    for sg_id in sg_list:
+    sgs = neutron.list_security_groups()
+    for sg in sgs['security_groups']:
+        sg_id = str(sg['id'])
         debug('    security group: ' + sg_id)
-        sg_data, stat = zk.get(sg_container_path + '/' + sg_id)
-        sg_data_as_json = json.loads(sg_data)
-        sgr_list = sg_data_as_json['data']['security_group_rules']
-        for sgr in sgr_list:
+        for sgr in sg['security_group_rules']:
             sgr_id = str(sgr['id'])
             debug('        security group rule: ' + sgr_id)
-            referenced_sgr_ids[sgr_id] = sg_id     
+            referenced_sgr_ids[sgr_id] = sg_id
 
-    debug('Finding gargabe (2/2): looking for orphan security group rules ...')
+    debug('Finding gargabe (2/2): looking for orphan security group rules in Zookeeper...')
  
     sgr_list = zk.get_children(sgr_container_path)
     for sgr_id in sgr_list:
@@ -138,8 +140,47 @@ def debug(msg):
     if verbose:
         print(msg)
 
+def get_credentials():
+    d = {}
+    d['username'] = os.environ['OS_USERNAME']
+    d['password'] = os.environ['OS_PASSWORD']
+    d['auth_url'] = os.environ['OS_AUTH_URL']
+    d['tenant_name'] = os.environ['OS_TENANT_NAME']
+    return d
+
+def get_neutron_client_with_credentials(username,
+                                        password,
+                                        project_name,
+                                        project_domain_id,
+                                        user_domain_id,
+                                        auth_url):
+    print('Connecting to neutron')
+        
+    auth = identity.Password(auth_url=auth_url,
+                             username=username,
+                             password=password,
+                             project_name=project_name,
+                             project_domain_id=project_domain_id,
+                             user_domain_id=user_domain_id)
+    sess = session.Session(auth=auth)
+    neutron = client.Client(session=sess)
+    neutron.list_networks()
+    print('Connection to neutron completed')
+    return neutron    
+
+def get_neutron_client():
+    credentials = get_credentials()
+    return get_neutron_client_with_credentials(
+                              credentials['username'],
+                              credentials['password'],
+                              credentials['tenant_name'],
+                              None,
+                              None,
+                              credentials['auth_url'])
+
 def main(args):
     zk = KazooClient(hosts=args.zookeeper_address, read_only=True)
+    neutron = get_neutron_client()
 
     try:
 	zk.start()
@@ -158,17 +199,17 @@ def main(args):
                 print('Backup file exists and it would be overwritten, aborting')
                 exit(2)
 	    with open(args.backup_file, "w") as f:
-		find_garbage(zk, f, args.backup_and_remove_garbage)
+		find_garbage(zk, neutron, f, args.backup_and_remove_garbage)
             print('Created backup file at: ' + args.backup_file)
     finally:
         debug('Disconnected from ' + args.zookeeper_address)
 	zk.stop()
 
 if __name__ == "__main__":
-    args = parse_args()
-    verbose = args.verbose
-    debug('Input arguments')
-    debug(args)
-    main(args)
-    exit(exit_code)
+     args = parse_args()
+     verbose = args.verbose
+     debug('Input arguments')
+     debug(args)
+     main(args)
+     exit(exit_code)
 
