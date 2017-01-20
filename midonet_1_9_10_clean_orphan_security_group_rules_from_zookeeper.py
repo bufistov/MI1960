@@ -74,7 +74,7 @@ def find_garbage(zk, neutron, backup, remove_garbage):
 
             # write to backup file
             sgr_data, stat = zk.get(sgr_zkpath)
-            backup.write(sgr_data)
+            backup.write('%s%s' % (sgr_dat,'\n'))
 
             # check options to see if garbage needs to be removed
             if remove_garbage:
