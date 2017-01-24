@@ -74,7 +74,7 @@ def find_garbage(zk, neutron, backup, remove_garbage):
 
             # write to backup file
             sgr_data, stat = zk.get(sgr_zkpath)
-            backup.write('%s%s' % (sgr_data,'\n'))
+            backup.write('%s%s' % (sgr_data.strip(),'\n'))
 
             # check options to see if garbage needs to be removed
             if remove_garbage:
@@ -96,15 +96,21 @@ def verify_backup(zk, backup):
     count_verified = 0
     debug('Verifying backup')
     for line in backup:
-       count += 1
-       sgr_data_as_json = json.loads(line)
-       sgr_id = sgr_data_as_json['data']['id']
-       sgr_zkpath = sgr_container_path + '/' + sgr_id
-       if not zk.exists(sgr_zkpath):
-           count_verified += 1
-       else:
-           print('WARNING: node in backup already exists: ' + sgr_zkpath)
-           exit_code = 1
+       if line.strip():
+	   count += 1
+           try:
+	       sgr_data_as_json = json.loads(line)
+           except:
+               print('ERROR: cannot parse json object %s' % line)
+               exit_code=1
+
+	   sgr_id = sgr_data_as_json['data']['id']
+	   sgr_zkpath = sgr_container_path + '/' + sgr_id
+	   if not zk.exists(sgr_zkpath):
+	       count_verified += 1
+	   else:
+	       print('WARNING: node in backup already exists: ' + sgr_zkpath)
+	       exit_code = 1
     print('Verified ' + str(count_verified) + '/' + str(count) + ' entries could be restored')
 
 def restore_backup(zk, backup):
@@ -113,16 +119,17 @@ def restore_backup(zk, backup):
     count_restored = 0
     debug('Restoring backup')
     for line in backup:
-       count += 1
-       sgr_data_as_json = json.loads(line)
-       sgr_id = sgr_data_as_json['data']['id']
-       sgr_zkpath = sgr_container_path + '/' + sgr_id
-       try:
-           zk.create(sgr_zkpath, line)
-           count_restored += 1
-       except NodeExistsError:
-           print('ERROR: cannot create ' + sgr_zkpath +'. Node already exists')
-           exit_code = 1
+       if line.strip():
+	   count += 1
+	   sgr_data_as_json = json.loads(line)
+	   sgr_id = sgr_data_as_json['data']['id']
+	   sgr_zkpath = sgr_container_path + '/' + sgr_id
+	   try:
+	       zk.create(sgr_zkpath, line)
+	       count_restored += 1
+	   except NodeExistsError:
+	       print('ERROR: cannot create ' + sgr_zkpath +'. Node already exists')
+	       exit_code = 1
     print('Restored ' + str(count_restored) + '/' + str(count) + ' entries')
 
 def check_schema_version_or_die(zk):
