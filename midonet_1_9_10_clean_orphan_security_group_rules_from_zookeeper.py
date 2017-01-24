@@ -100,9 +100,10 @@ def verify_backup(zk, backup):
 	   count += 1
            try:
 	       sgr_data_as_json = json.loads(line)
-           except:
-               print('ERROR: cannot parse json object %s' % line)
+           except Exception as error:
+               print('ERROR: cannot parse json object: %s' % line)
                exit_code=1
+               raise error
 
 	   sgr_id = sgr_data_as_json['data']['id']
 	   sgr_zkpath = sgr_container_path + '/' + sgr_id
@@ -119,17 +120,18 @@ def restore_backup(zk, backup):
     count_restored = 0
     debug('Restoring backup')
     for line in backup:
-       if line.strip():
-	   count += 1
-	   sgr_data_as_json = json.loads(line)
-	   sgr_id = sgr_data_as_json['data']['id']
-	   sgr_zkpath = sgr_container_path + '/' + sgr_id
-	   try:
-	       zk.create(sgr_zkpath, line)
-	       count_restored += 1
-	   except NodeExistsError:
-	       print('ERROR: cannot create ' + sgr_zkpath +'. Node already exists')
-	       exit_code = 1
+        if line.strip():
+	    count += 1
+	    sgr_data_as_json = json.loads(line)
+	    sgr_id = sgr_data_as_json['data']['id']
+	    sgr_zkpath = sgr_container_path + '/' + sgr_id
+	    try:
+                debug('Creating node %s at path %s' %(line, sgr_zkpath))
+                zk.create(sgr_zkpath, line, None, ephemeral=False, makepath=False)
+	        count_restored += 1
+	    except NodeExistsError:
+	        print('ERROR: cannot create ' + sgr_zkpath +'. Node already exists')
+	        exit_code = 1
     print('Restored ' + str(count_restored) + '/' + str(count) + ' entries')
 
 def check_schema_version_or_die(zk):
